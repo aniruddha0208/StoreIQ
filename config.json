@@ -1,0 +1,87 @@
+{
+  "store_name": "Demo Store",
+  "host": "127.0.0.1",
+  "port": 8000,
+  "open_browser": true,
+  "db": "store.db",
+  "process_width": 960,
+  "trend_bucket_s": 10,
+  "floor": {
+    "enabled": true,
+    "source": "store.mp4",
+    "loop": true,
+    "realtime": true,
+    "process_every": 1,
+    "detector": "test_blobs",
+    "yolo_model": "yolov8s.pt",
+    "conf": 0.3,
+    "sections": [
+      {
+        "name": "Section A",
+        "rect": [
+          0.0,
+          0.0,
+          0.333,
+          1.0
+        ]
+      },
+      {
+        "name": "Section B",
+        "rect": [
+          0.333,
+          0.0,
+          0.334,
+          1.0
+        ]
+      },
+      {
+        "name": "Section C",
+        "rect": [
+          0.667,
+          0.0,
+          0.333,
+          1.0
+        ]
+      }
+    ],
+    "queue": {
+      "name": "Checkout",
+      "rect": [
+        0.68,
+        0.6,
+        0.32,
+        0.4
+      ],
+      "alert_at": 3,
+      "alert_after_s": 3
+    }
+  },
+  "shelf": {
+    "enabled": true,
+    "source": "shelf.mp4",
+    "auto_calibrate": true,
+    "spots": [
+      {
+        "name": "Chips",
+        "rect": [
+          0.35,
+          0.35,
+          0.3,
+          0.3
+        ],
+        "stock": 10,
+        "low_at": 5
+      }
+    ],
+    "diff_threshold": 30,
+    "occupy_frac": 0.06,
+    "remove_frames": 6,
+    "restock_frames": 3
+  },
+  "tracking": {
+    "max_dist": 0.08,
+    "max_missed": 12,
+    "min_zone_frames": 3,
+    "min_track_frames": 3
+  }
+}
