@@ -1,0 +1,426 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Store floor, live</title>
+<style>
+  :root {
+    --floor: #E3E6E1;
+    --panel: #F6F7F4;
+    --ink: #1E2A2F;
+    --muted: #5B686D;
+    --rule: #C8CDC6;
+    --marigold: #F0B429;
+    --teal: #1F6F8B;
+    --red: #C2412D;
+    --green: #2F7D4F;
+    --screen: #27343A;
+    --display: "Bahnschrift", "DIN Alternate", "DIN Next", "Roboto Condensed", "Arial Narrow", system-ui, sans-serif;
+    --body: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+  }
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  html { background: var(--floor); }
+  body {
+    margin: 0; color: var(--ink);
+    font: 15px/1.45 var(--body);
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* ---------- header ---------- */
+  header {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 10px 28px;
+    padding: 18px 28px 14px; border-bottom: 2px solid var(--ink);
+  }
+  h1 { font: 600 28px/1 var(--display); margin: 0; }
+  .clock { font: 500 17px/1 var(--display); color: var(--muted); }
+  .chips { margin-left: auto; display: flex; flex-wrap: wrap; gap: 6px 18px; }
+  .chip { display: flex; align-items: center; gap: 7px; font-size: 13px; color: var(--muted); }
+  .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--rule); flex: none; }
+  .dot.live { background: var(--green); }
+  .dot.starting { background: var(--marigold); }
+  .dot.offline, .dot.error, .dot.ended { background: var(--red); }
+
+  /* ---------- layout ---------- */
+  main {
+    display: grid; gap: 20px; padding: 20px 28px 12px; align-items: start;
+    grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr);
+    grid-template-areas:
+      "floor now"
+      "floor trend"
+      "rank  alerts"
+      "shelf alerts";
+  }
+  #floorPanel { grid-area: floor; } #nowPanel { grid-area: now; }
+  #trendPanel { grid-area: trend; } #rankPanel { grid-area: rank; }
+  #shelfPanel { grid-area: shelf; } #alertsPanel { grid-area: alerts; }
+  @media (max-width: 900px) {
+    main { grid-template-columns: minmax(0, 1fr);
+      grid-template-areas: "now" "floor" "rank" "trend" "shelf" "alerts"; padding: 16px; }
+    header { padding: 14px 16px; }
+    .chips { margin-left: 0; }
+  }
+
+  .panel { background: var(--panel); border: 1px solid var(--rule); border-radius: 3px; padding: 16px 18px; }
+  h2 { font: 600 18px/1.2 var(--display); margin: 0 0 12px; }
+  .hint { color: var(--muted); font-size: 13px; margin: -6px 0 12px; }
+
+  /* ---------- camera feeds ---------- */
+  .cam { position: relative; background: var(--screen); border-radius: 2px; overflow: hidden; aspect-ratio: 16 / 9; }
+  .cam img { width: 100%; height: 100%; object-fit: contain; display: block; }
+  .cam .msg {
+    position: absolute; left: 0; right: 0; bottom: 0; padding: 9px 12px;
+    background: rgba(30, 42, 47, .88); color: #fff; font-size: 13px;
+  }
+  .cam .msg:empty { display: none; }
+  .camfoot { display: flex; justify-content: space-between; gap: 12px; margin-top: 8px; font-size: 13px; color: var(--muted); }
+
+  /* ---------- right now ---------- */
+  .now { display: grid; grid-template-columns: 1fr 1fr; gap: 18px 16px; }
+  .stat b { display: block; font: 600 46px/1 var(--display); }
+  .stat span { display: block; margin-top: 4px; font-size: 13px; color: var(--muted); }
+  .stat.warn b { color: var(--red); }
+  .stat.small b { font-size: 30px; line-height: 1.1; padding-top: 10px; overflow-wrap: anywhere; }
+
+  /* ---------- section ranking: shelf-edge labels ---------- */
+  .rank { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+  .rank li {
+    display: grid; grid-template-columns: 38px minmax(0, 1fr) auto; align-items: center;
+    column-gap: 12px; row-gap: 8px; padding: 11px 16px 11px 0;
+    background: #fff; border-left: 7px solid var(--marigold);
+  }
+  .rank li.top { background: var(--marigold); border-left-color: var(--ink); }
+  .rank .pos { font: 600 20px/1 var(--display); text-align: center; color: var(--muted); }
+  .rank .name { font: 600 19px/1.1 var(--display); }
+  .rank .meta { display: block; font-size: 13px; color: var(--muted); margin-top: 3px; }
+  .rank .count { font: 600 36px/1 var(--display); text-align: right; }
+  .rank .count small { display: block; font: 400 12px var(--body); color: var(--muted); }
+  .rank li.top .pos, .rank li.top .meta, .rank li.top .count small { color: var(--ink); }
+  .share { grid-column: 2 / 4; height: 5px; background: rgba(30, 42, 47, .12); }
+  .share i { display: block; height: 100%; background: var(--ink); }
+
+  /* ---------- trend ---------- */
+  #trend { width: 100%; height: 120px; display: block; }
+  #trend rect { fill: var(--teal); }
+  .axis { display: flex; justify-content: space-between; font-size: 12px; color: var(--muted); margin-top: 4px; }
+
+  /* ---------- shelf ---------- */
+  .shelfgrid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; align-items: start; }
+  @media (max-width: 1200px) { .shelfgrid { grid-template-columns: minmax(0, 1fr); } }
+  .calib { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;
+    padding: 10px 12px; margin-bottom: 12px; background: #fff; border-left: 4px solid var(--ink); font-size: 14px; }
+  .calib.needed { border-left-color: var(--red); }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { padding: 8px 6px; border-bottom: 1px solid var(--rule); text-align: left; vertical-align: middle; }
+  th { font-weight: 500; font-size: 13px; color: var(--muted); }
+  td.item { font: 600 16px var(--display); }
+  td.item small { display: block; font: 400 12px var(--body); color: var(--muted); }
+  .stock { display: flex; align-items: center; gap: 10px; }
+  .stock b { font: 600 24px/1 var(--display); min-width: 2.2ch; }
+  .meter { flex: 1; min-width: 50px; height: 8px; background: rgba(30, 42, 47, .12); }
+  .meter i { display: block; height: 100%; background: var(--teal); transition: width .3s; }
+  .meter.low i { background: var(--marigold); }
+  .meter.out i { background: var(--red); }
+  .actions { display: flex; gap: 6px; justify-content: flex-end; }
+  .empty { color: var(--muted); font-size: 14px; padding: 8px 0; }
+
+  button {
+    font: inherit; font-size: 13px; padding: 6px 11px; cursor: pointer;
+    border: 1px solid var(--ink); border-radius: 2px; background: transparent; color: var(--ink);
+  }
+  button:hover { background: var(--ink); color: var(--panel); }
+  button.primary { background: var(--ink); color: var(--panel); }
+  button.primary:hover { background: var(--teal); border-color: var(--teal); }
+  button:focus-visible, a:focus-visible { outline: 3px solid var(--teal); outline-offset: 2px; }
+
+  /* ---------- alerts ---------- */
+  .alerts { list-style: none; margin: 0; padding: 0; max-height: 440px; overflow: auto; }
+  .alerts li { display: grid; grid-template-columns: 10px minmax(0, 1fr); gap: 3px 12px; padding: 10px 0; border-bottom: 1px solid var(--rule); }
+  .alerts .kind { width: 10px; height: 10px; margin-top: 6px; background: var(--marigold); }
+  .alerts .kind.out_of_stock { background: var(--red); }
+  .alerts .kind.long_queue { background: var(--teal); }
+  .alerts time { grid-column: 2; font-size: 12px; color: var(--muted); }
+  .alerts li.fresh { animation: fresh 2.4s ease-out; }
+  @keyframes fresh { from { background: rgba(240, 180, 41, .45); } to { background: transparent; } }
+  @media (prefers-reduced-motion: reduce) {
+    .alerts li.fresh { animation: none; }
+    .meter i { transition: none; }
+  }
+
+  footer { display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center; padding: 8px 28px 28px; font-size: 13px; color: var(--muted); }
+  footer a { color: var(--ink); }
+  @media (max-width: 900px) { footer { padding: 8px 16px 24px; } }
+</style>
+</head>
+<body>
+
+<header>
+  <h1 id="storeName">Store</h1>
+  <span class="clock" id="clock"></span>
+  <div class="chips" aria-live="polite">
+    <span class="chip"><span class="dot" id="dotFloor"></span><span id="chipFloor">Floor camera</span></span>
+    <span class="chip"><span class="dot" id="dotShelf"></span><span id="chipShelf">Shelf camera</span></span>
+    <span class="chip"><span class="dot" id="dotLog"></span><span id="chipLog">Log</span></span>
+    <span class="chip" id="chipConn" hidden><span class="dot error"></span>Dashboard lost connection to the app</span>
+  </div>
+</header>
+
+<main>
+  <section class="panel" id="floorPanel" aria-labelledby="hFloor">
+    <h2 id="hFloor">Shop floor</h2>
+    <div class="cam">
+      <img src="/stream/floor" alt="Live shop floor video with section boxes and detected people">
+      <div class="msg" id="floorMsg"></div>
+    </div>
+    <div class="camfoot"><span id="floorDetector"></span><span id="floorFps"></span></div>
+  </section>
+
+  <section class="panel" id="nowPanel" aria-labelledby="hNow">
+    <h2 id="hNow">Right now</h2>
+    <div class="now">
+      <div class="stat"><b id="kInView">0</b><span>People on the floor</span></div>
+      <div class="stat"><b id="kVisitors">0</b><span>Visitors this session</span></div>
+      <div class="stat" id="kQueueBox"><b id="kQueue">–</b><span id="kQueueLabel">No checkout zone drawn</span></div>
+      <div class="stat" id="kLowBox"><b id="kLow">0</b><span>Items low or out of stock</span></div>
+      <div class="stat small" style="grid-column: 1 / -1"><b id="kBusiest">Waiting for visitors</b><span>Busiest section</span></div>
+    </div>
+  </section>
+
+  <section class="panel" id="trendPanel" aria-labelledby="hTrend">
+    <h2 id="hTrend">New visitors over time</h2>
+    <svg id="trend" viewBox="0 0 300 120" preserveAspectRatio="none" role="img" aria-label="New visitors per interval"></svg>
+    <div class="axis"><span id="axisStart"></span><span>now</span></div>
+  </section>
+
+  <section class="panel" id="rankPanel" aria-labelledby="hRank">
+    <h2 id="hRank">Sections by footfall</h2>
+    <p class="hint">Ranked by visitors. Average dwell is how long people stayed in the section.</p>
+    <ol class="rank" id="rank"></ol>
+  </section>
+
+  <section class="panel" id="shelfPanel" aria-labelledby="hShelf">
+    <h2 id="hShelf">Shelf stock</h2>
+    <div class="calib" id="calib">
+      <span id="calibText">Checking the shelf camera</span>
+      <button class="primary" id="calibBtn" type="button">Calibrate empty shelf</button>
+    </div>
+    <div class="shelfgrid">
+      <div class="cam">
+        <img src="/stream/shelf" alt="Live shelf camera with product spots">
+        <div class="msg" id="shelfMsg"></div>
+      </div>
+      <div>
+        <table>
+          <thead><tr><th>Item</th><th>Stock</th><th aria-label="Actions"></th></tr></thead>
+          <tbody id="stockRows"></tbody>
+        </table>
+        <p class="empty" id="stockEmpty" hidden>No shelf spots set. Run <code>python setup_zones.py shelf</code> to draw them.</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="panel" id="alertsPanel" aria-labelledby="hAlerts">
+    <h2 id="hAlerts">Alerts</h2>
+    <ul class="alerts" id="alerts" aria-live="polite"></ul>
+    <p class="empty" id="alertsEmpty">No alerts. Stock and queue are within limits.</p>
+  </section>
+</main>
+
+<footer>
+  <button type="button" id="resetBtn">Reset footfall counts</button>
+  <a href="/api/report.csv">Download report (CSV)</a>
+  <span id="uptime"></span>
+</footer>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const STATE_WORD = { live: "live", starting: "starting", offline: "offline", error: "error", ended: "finished", off: "off" };
+let seenAlerts = null;
+
+async function post(url, body) {
+  try {
+    await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body || {}) });
+  } catch (e) { /* the next refresh shows the connection state */ }
+  refresh();
+}
+
+function setChip(dotId, textId, label, st) {
+  const state = (st && st.state) || "starting";
+  $(dotId).className = "dot " + state;
+  $(textId).textContent = `${label} ${STATE_WORD[state] || state}`;
+  $(textId).parentElement.title = (st && st.msg) || "";
+}
+
+function fmtDwell(s) {
+  if (s === null || s === undefined) return "no completed visits yet";
+  return s < 60 ? `avg dwell ${Math.round(s)} s` : `avg dwell ${(s / 60).toFixed(1)} min`;
+}
+
+function renderNow(floor, shelf) {
+  $("kInView").textContent = floor ? floor.in_view : "–";
+  $("kVisitors").textContent = floor ? floor.visitors : "–";
+
+  const q = floor && floor.queue;
+  if (q) {
+    $("kQueue").textContent = q.length;
+    $("kQueueLabel").textContent = `Waiting at ${q.name} (alert at ${q.alert_at})`;
+    $("kQueueBox").classList.toggle("warn", q.length >= q.alert_at);
+  } else {
+    $("kQueue").textContent = "–";
+    $("kQueueLabel").textContent = "No checkout zone drawn";
+    $("kQueueBox").classList.remove("warn");
+  }
+
+  const spots = (shelf && shelf.spots) || [];
+  const low = spots.filter((s) => s.stock <= s.low_at).length;
+  $("kLow").textContent = low;
+  $("kLowBox").classList.toggle("warn", low > 0);
+
+  const secs = (floor && floor.sections) || [];
+  const top = secs.reduce((a, b) => (b.visits > (a ? a.visits : 0) ? b : a), null);
+  $("kBusiest").textContent = top ? top.name : "Waiting for visitors";
+}
+
+function renderRank(floor) {
+  const secs = ((floor && floor.sections) || []).slice().sort((a, b) => b.visits - a.visits || b.now - a.now);
+  const total = secs.reduce((n, s) => n + s.visits, 0);
+  if (!secs.length) {
+    $("rank").innerHTML = `<li><span class="pos"></span><span class="name">No sections set<span class="meta">Run python setup_zones.py floor to draw them.</span></span></li>`;
+    return;
+  }
+  $("rank").innerHTML = secs.map((s, i) => {
+    const share = total ? Math.round((100 * s.visits) / total) : 0;
+    const top = i === 0 && s.visits > 0;
+    return `<li class="${top ? "top" : ""}">
+      <span class="pos">${i + 1}</span>
+      <span class="name">${esc(s.name)}<span class="meta">${s.now} here now, ${fmtDwell(s.avg_dwell)}</span></span>
+      <span class="count">${s.visits}<small>${share}% of visits</small></span>
+      <span class="share"><i style="width:${share}%"></i></span>
+    </li>`;
+  }).join("");
+}
+
+function renderTrend(trend, bucket) {
+  const svg = $("trend");
+  const n = trend.length;
+  const max = Math.max(1, ...trend.map((p) => p.v));
+  const bw = 300 / n;
+  svg.innerHTML = trend.map((p, i) => {
+    const h = p.v ? Math.max(3, (p.v / max) * 112) : 0;
+    return `<rect x="${(i * bw + 1).toFixed(1)}" y="${(120 - h).toFixed(1)}" width="${(bw - 2).toFixed(1)}" height="${h.toFixed(1)}"><title>${p.v} new</title></rect>`;
+  }).join("");
+  const span = n * bucket;
+  $("axisStart").textContent = span >= 120 ? `${Math.round(span / 60)} min ago` : `${span} s ago`;
+}
+
+function renderShelf(shelf, status) {
+  const spots = (shelf && shelf.spots) || [];
+  const live = status && status.state === "live";
+  const calibrated = shelf && shelf.calibrated;
+  const calib = $("calib");
+  calib.classList.toggle("needed", !calibrated);
+  $("calibText").textContent = !live
+    ? "The shelf camera is not running."
+    : calibrated
+      ? "Calibrated. Recalibrate if the light or camera moves (clear the spots first)."
+      : "Clear the product spots, then calibrate so the camera learns the empty shelf.";
+  $("calibBtn").textContent = calibrated ? "Recalibrate" : "Calibrate empty shelf";
+  $("calibBtn").disabled = !live;
+
+  $("stockEmpty").hidden = spots.length > 0;
+  const body = $("stockRows");
+  const names = spots.map((s) => s.name).join("|");
+  if (body.dataset.names !== names) {           // build rows once; update values in place
+    body.dataset.names = names;
+    body.innerHTML = spots.map((s) => `
+      <tr data-name="${esc(s.name)}">
+        <td class="item">${esc(s.name)}<small data-f="state"></small></td>
+        <td><div class="stock"><b data-f="stock"></b><div class="meter" data-f="meter"><i></i></div></div></td>
+        <td><div class="actions">
+          <button type="button" data-act="adjust" data-delta="-1" aria-label="Remove one ${esc(s.name)}">−1</button>
+          <button type="button" data-act="adjust" data-delta="1" aria-label="Add one ${esc(s.name)}">+1</button>
+          <button type="button" data-act="refill">Refill</button>
+        </div></td>
+      </tr>`).join("");
+  }
+  spots.forEach((s, i) => {
+    const row = body.rows[i];
+    if (!row) return;
+    const stateText = s.state === "on_shelf" ? "On its spot" : s.state === "empty" ? "Spot empty" : "Not calibrated";
+    row.querySelector('[data-f="state"]').textContent = `${stateText}, ${s.taken} picked this session`;
+    row.querySelector('[data-f="stock"]').textContent = s.stock;
+    const m = row.querySelector('[data-f="meter"]');
+    m.className = "meter" + (s.stock === 0 ? " out" : s.stock <= s.low_at ? " low" : "");
+    m.firstElementChild.style.width = `${Math.min(100, (100 * s.stock) / Math.max(1, s.capacity))}%`;
+    m.title = `${s.stock} of ${s.capacity}`;
+  });
+}
+
+function renderAlerts(alerts) {
+  $("alertsEmpty").hidden = alerts.length > 0;
+  const keys = alerts.map((a) => a.ts + a.message);
+  const fresh = new Set(seenAlerts ? keys.filter((k) => !seenAlerts.has(k)) : []);
+  seenAlerts = new Set(keys);
+  $("alerts").innerHTML = alerts.map((a, i) => `
+    <li class="${fresh.has(keys[i]) ? "fresh" : ""}">
+      <span class="kind ${esc(a.kind)}"></span>
+      <span>${esc(a.message)}</span>
+      <time datetime="${esc(a.ts)}">${esc(a.ts.replace("T", " "))}</time>
+    </li>`).join("");
+}
+
+function render(s) {
+  $("storeName").textContent = s.store_name;
+  document.title = `${s.store_name}, live`;
+  setChip("dotFloor", "chipFloor", "Floor camera", s.status.floor);
+  setChip("dotShelf", "chipShelf", "Shelf camera", s.status.shelf);
+  setChip("dotLog", "chipLog", "Log", s.log);
+
+  const fs = s.status.floor || {}, ss = s.status.shelf || {};
+  $("floorMsg").textContent = fs.state === "live" ? "" : fs.msg || "";
+  $("shelfMsg").textContent = ss.state === "live" ? "" : ss.msg || "";
+  $("floorDetector").textContent = fs.state === "live" ? fs.msg : "";
+  $("floorFps").textContent = s.floor && fs.state === "live" ? `${s.floor.fps} frames/s processed` : "";
+
+  renderNow(s.floor, s.shelf);
+  renderRank(s.floor);
+  renderTrend(s.trend, s.trend_bucket_s);
+  renderShelf(s.shelf, s.status.shelf);
+  renderAlerts(s.alerts);
+
+  const m = Math.floor(s.uptime_s / 60);
+  $("uptime").textContent = `Running for ${m >= 60 ? Math.floor(m / 60) + " h " + (m % 60) + " min" : m + " min"}`;
+}
+
+async function refresh() {
+  try {
+    const r = await fetch("/api/state", { cache: "no-store" });
+    render(await r.json());
+    $("chipConn").hidden = true;
+  } catch (e) {
+    $("chipConn").hidden = false;
+  }
+}
+
+$("calibBtn").addEventListener("click", () => post("/api/shelf/calibrate"));
+$("resetBtn").addEventListener("click", () => {
+  if (confirm("Reset visitor counts, dwell times and the trend? Stock is not affected.")) post("/api/floor/reset");
+});
+$("stockRows").addEventListener("click", (e) => {
+  const b = e.target.closest("button");
+  if (!b) return;
+  const name = b.closest("tr").dataset.name;
+  if (b.dataset.act === "refill") post("/api/shelf/refill", { name });
+  else post("/api/shelf/adjust", { name, delta: Number(b.dataset.delta) });
+});
+
+function tick() {
+  $("clock").textContent = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+}
+tick(); setInterval(tick, 1000);
+refresh(); setInterval(refresh, 1000);
+</script>
+</body>
+</html>
